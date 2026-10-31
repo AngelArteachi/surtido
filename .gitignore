@@ -1,0 +1,13 @@
+target/
+node_modules/
+dist/
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store
+.env
+.local/
+docker-compose.override.yml
+loadtest/results/*
+!loadtest/results/.gitkeep
