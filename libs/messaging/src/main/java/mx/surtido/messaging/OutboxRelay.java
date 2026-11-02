@@ -25,18 +25,21 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class OutboxRelay {
     private static final Logger log = LoggerFactory.getLogger(OutboxRelay.class);
 
-    private record Row(UUID id, String topic, String key, String type, String payload) {}
+    private record Row(UUID id, String topic, String key, String type, String payload, String traceparent) {}
 
     private final JdbcTemplate jdbc;
     private final KafkaTemplate<String, String> kafka;
     private final TransactionTemplate tx;
     private final MeterRegistry metrics;
+    private final TraceCarrier traces;
 
-    public OutboxRelay(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka, TransactionTemplate tx, MeterRegistry metrics) {
+    public OutboxRelay(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka, TransactionTemplate tx, MeterRegistry metrics,
+                       TraceCarrier traces) {
         this.jdbc = jdbc;
         this.kafka = kafka;
         this.tx = tx;
         this.metrics = metrics;
+        this.traces = traces;
     }
 
     @Scheduled(fixedDelay = 100)
@@ -54,7 +57,7 @@ public class OutboxRelay {
     int relayBatch() {
         List<Row> rows = jdbc.query(
                 """
-                SELECT id, topic, message_key, event_type, payload FROM outbox
+                SELECT id, topic, message_key, event_type, payload, traceparent FROM outbox
                 WHERE published_at IS NULL ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED
                 """,
                 (rs, i) -> new Row(
@@ -62,16 +65,20 @@ public class OutboxRelay {
                         rs.getString("topic"),
                         rs.getString("message_key"),
                         rs.getString("event_type"),
-                        rs.getString("payload")));
+                        rs.getString("payload"),
+                        rs.getString("traceparent")));
         for (Row row : rows) {
             var record = new ProducerRecord<>(row.topic(), row.key(), row.payload());
             record.headers().add(Headers.EVENT_ID, row.id().toString().getBytes(StandardCharsets.UTF_8));
             record.headers().add(Headers.EVENT_TYPE, row.type().getBytes(StandardCharsets.UTF_8));
-            try {
-                kafka.send(record).get(10, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                throw new IllegalStateException("Kafka send failed for outbox row " + row.id(), e);
-            }
+            // Sent inside a span that continues the request's trace, so Kafka carries it to the consumers.
+            traces.continueTrace(row.traceparent(), "outbox " + row.type(), () -> {
+                try {
+                    kafka.send(record).get(10, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Kafka send failed for outbox row " + row.id(), e);
+                }
+            });
             metrics.counter("outbox.relayed", "type", row.type()).increment();
         }
         if (!rows.isEmpty()) {

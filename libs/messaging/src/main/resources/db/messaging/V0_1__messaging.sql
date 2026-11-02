@@ -8,6 +8,9 @@ CREATE TABLE outbox (
   message_key  text NOT NULL,
   event_type   text NOT NULL,
   payload      text NOT NULL,
+  -- W3C trace context of the request that caused the event, so the trace
+  -- continues through Kafka even though a background job sends it.
+  traceparent  text,
   created_at   timestamptz NOT NULL DEFAULT clock_timestamp(),
   published_at timestamptz
 );

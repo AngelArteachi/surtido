@@ -13,20 +13,23 @@ import tools.jackson.databind.json.JsonMapper;
 public class Outbox {
     private final JdbcTemplate jdbc;
     private final JsonMapper json;
+    private final TraceCarrier traces;
 
-    public Outbox(JdbcTemplate jdbc, JsonMapper json) {
+    public Outbox(JdbcTemplate jdbc, JsonMapper json, TraceCarrier traces) {
         this.jdbc = jdbc;
         this.json = json;
+        this.traces = traces;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void publish(String topic, UUID orderId, Object event) {
         jdbc.update(
-                "INSERT INTO outbox (id, topic, message_key, event_type, payload) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO outbox (id, topic, message_key, event_type, payload, traceparent) VALUES (?, ?, ?, ?, ?, ?)",
                 UUID.randomUUID(),
                 topic,
                 orderId.toString(),
                 EventTypes.nameOf(event.getClass()),
-                json.writeValueAsString(event));
+                json.writeValueAsString(event),
+                traces.capture());
     }
 }
