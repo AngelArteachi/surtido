@@ -233,7 +233,7 @@ export function OrderTracker() {
             <tbody className="divide-y divide-line">
               {o.lines.map((line) => (
                 <tr key={line.productId}>
-                  <td className="py-2 pr-3">{line.quantity} ×</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{line.quantity} ×</td>
                   <td className="w-full py-2">{line.productName ?? <span className="text-muted">Confirmando con el almacén…</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">{line.unitPriceCents !== null ? money(line.unitPriceCents * line.quantity) : '—'}</td>
                 </tr>
@@ -267,7 +267,7 @@ export function OrderTracker() {
         <p className="mb-4 text-xs opacity-70">Cada paso que dio tu pedido entre los servicios, en vivo.</p>
         <ol className="flex flex-col gap-3">
           {o.timeline.map((step, i) => (
-            <li key={i} className="grid grid-cols-[4.5rem_1fr] gap-2 text-sm">
+            <li key={i} className="grid grid-cols-[4rem_1fr] gap-2 text-sm">
               <span className="num font-mono text-xs opacity-60">{time(step.occurredAt)}</span>
               <div>
                 <span className="font-mono text-[0.68rem] text-yellow">{step.step}</span>

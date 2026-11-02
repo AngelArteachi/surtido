@@ -17,7 +17,7 @@ function ProductCard({ product }: { product: Product }) {
       <div className="flex flex-1 flex-col gap-2 p-3">
         <h3 className="leading-snug font-semibold">{product.name}</h3>
         <p className="text-sm text-muted">{product.pack}</p>
-        <div className="mt-auto flex items-end justify-between gap-2">
+        <div className="mt-auto flex flex-wrap items-end justify-between gap-2">
           <div>
             <div className="num text-lg font-semibold">{money(product.priceCents)}</div>
             <div className={`num text-xs ${soldOut ? 'text-bad' : product.lowStock ? 'text-warn' : 'text-muted'}`}>

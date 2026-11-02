@@ -6,7 +6,7 @@ export const money = (cents: number) => pesos.format(cents / 100);
 export const shortId = (id: string) => id.slice(0, 8).toUpperCase();
 
 export const time = (iso: string) =>
-  new Intl.DateTimeFormat('es-MX', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(iso));
+  new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
 
 export const dateTime = (iso: string) =>
   new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
