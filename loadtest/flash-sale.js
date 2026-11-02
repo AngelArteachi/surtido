@@ -11,6 +11,10 @@ import { Counter, Trend } from 'k6/metrics';
 const BASE = __ENV.BASE_URL || 'http://localhost:8091';
 const STORES = Number(__ENV.STORES || 400);
 const UNITS = Number(__ENV.UNITS || 150);
+// Latency targets for a developer machine. CI raises them: its shared 2-vCPU
+// runner hosts all fifteen containers, and only correctness must hold there.
+const PLACE_P95 = Number(__ENV.PLACE_P95_MS || 800);
+const PAY_P95 = Number(__ENV.PAY_P95_MS || 800);
 
 const confirmed = new Counter('surtido_orders_confirmed');
 const rejected = new Counter('surtido_orders_rejected');
@@ -21,8 +25,8 @@ export const options = {
     flash: { executor: 'per-vu-iterations', vus: STORES, iterations: 1, maxDuration: '5m' },
   },
   thresholds: {
-    'http_req_duration{name:place_order}': ['p(95)<800'],
-    'http_req_duration{name:pay}': ['p(95)<800'],
+    'http_req_duration{name:place_order}': [`p(95)<${PLACE_P95}`],
+    'http_req_duration{name:pay}': [`p(95)<${PAY_P95}`],
     http_req_failed: ['rate<0.01'],
     checks: ['rate>0.99'],
   },

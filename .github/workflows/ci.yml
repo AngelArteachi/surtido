@@ -53,7 +53,10 @@ jobs:
       - name: Smoke test through the gateway
         run: node scripts/smoke.mjs
       - name: Flash sale (200 stores, 80 scarce units)
-        run: docker compose --profile loadtest run --rm -e STORES=200 -e UNITS=80 k6
+        # Correctness thresholds stay strict; latency ones are relaxed for the shared runner.
+        run: |
+          chmod a+w loadtest/results
+          docker compose --profile loadtest run --rm -e STORES=200 -e UNITS=80 -e PLACE_P95_MS=3000 -e PAY_P95_MS=3000 k6
       - name: Service logs
         if: failure()
         run: docker compose logs --tail 200
