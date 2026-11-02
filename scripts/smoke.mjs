@@ -62,6 +62,12 @@ async function step(name, fn) {
   }
 }
 
+// Containers report healthy before the gateway has seen every service in Eureka.
+await waitFor('every service to be routable', async () => {
+  await Promise.all(['/stores', '/products', '/shipments', '/notifications', '/payments/spei/pending'].map((path) => api(path)));
+  return true;
+}, 120_000);
+
 const stores = await api('/stores');
 const store = stores[0];
 const products = await api('/products');

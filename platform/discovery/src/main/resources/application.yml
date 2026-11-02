@@ -13,6 +13,9 @@ eureka:
     # Containers restart often in development; do not hold on to dead instances.
     enable-self-preservation: false
     eviction-interval-timer-in-ms: 5000
+    # Serve registrations within seconds instead of the 30 s default cache.
+    use-read-only-response-cache: false
+    response-cache-update-interval-ms: 3000
 
 management:
   endpoints:

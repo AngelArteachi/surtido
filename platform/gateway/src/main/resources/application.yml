@@ -4,6 +4,7 @@ server:
 spring:
   application:
     name: gateway
+  cloud.loadbalancer.cache.ttl: 5s
   cloud:
     gateway:
       server:
