@@ -102,7 +102,7 @@ Docker Desktop:
 
 The rejected orders took nothing: the integration tests check that a rejected
 order gives back every unit it had reserved on its other lines. CI runs the
-same scenario with 200 stores on every push.
+same scenario with 200 stores on every push; there the correctness checks stay strict and only the latency targets are relaxed, because one shared 2-vCPU runner hosts all fifteen containers.
 
 ## One trace across the saga
 
