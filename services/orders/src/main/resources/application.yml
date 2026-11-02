@@ -49,3 +49,7 @@ management:
 surtido:
   # How long a store has to pay once its stock is reserved.
   payment-window: ${PAYMENT_WINDOW:PT15M}
+
+management.metrics.distribution.percentiles-histogram:
+  http.server.requests: true
+  orders.time_to_confirm: true

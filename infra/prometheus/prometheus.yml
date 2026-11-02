@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: surtido
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [gateway:8080]
+        labels: { service: gateway }
+      - targets: [catalog:8080]
+        labels: { service: catalog }
+      - targets: [orders:8080]
+        labels: { service: orders }
+      - targets: [payments:8080]
+        labels: { service: payments }
+      - targets: [shipping:8080]
+        labels: { service: shipping }
+      - targets: [notifications:8080]
+        labels: { service: notifications }

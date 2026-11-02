@@ -1,0 +1,209 @@
+name: surtido
+
+# Host ports avoid the defaults on purpose, so Surtido can run next to other projects.
+
+x-java: &java
+  restart: unless-stopped
+  build: &build
+    context: .
+    dockerfile: Dockerfile
+  healthcheck: &health
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health"]
+    interval: 5s
+    timeout: 3s
+    retries: 30
+    start_period: 20s
+
+x-service-env: &service-env
+  JAVA_TOOL_OPTIONS: -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1
+  DATABASE_USER: surtido
+  DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-surtido}
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  EUREKA_URL: http://discovery:8761/eureka/
+  OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+
+x-service-deps: &service-deps
+  postgres: { condition: service_healthy }
+  kafka: { condition: service_healthy }
+  discovery: { condition: service_healthy }
+
+services:
+  # --- Infrastructure --------------------------------------------------------
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: surtido
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-surtido}
+    ports: ["5433:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "surtido"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:4.3.2
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    volumes: [kafka-data:/var/lib/kafka/data]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    restart: unless-stopped
+    ports: ["8026:8025"]
+
+  # --- Platform --------------------------------------------------------------
+
+  discovery:
+    <<: *java
+    build: { <<: *build, args: { MODULE: platform/discovery } }
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx192m -XX:+UseSerialGC -XX:TieredStopAtLevel=1
+    ports: ["8761:8761"]
+    healthcheck:
+      <<: *health
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8761/actuator/health"]
+
+  gateway:
+    <<: *java
+    build: { <<: *build, args: { MODULE: platform/gateway } }
+    depends_on:
+      discovery: { condition: service_healthy }
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx192m -XX:+UseSerialGC -XX:TieredStopAtLevel=1
+      EUREKA_URL: http://discovery:8761/eureka/
+      OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+    ports: ["8091:8080"]
+
+  # --- Services --------------------------------------------------------------
+
+  catalog:
+    <<: *java
+    build: { <<: *build, args: { MODULE: services/catalog } }
+    depends_on: *service-deps
+    environment:
+      <<: *service-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/catalog
+
+  orders:
+    <<: *java
+    build: { <<: *build, args: { MODULE: services/orders } }
+    depends_on: *service-deps
+    environment:
+      <<: *service-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/orders
+      PAYMENT_WINDOW: ${PAYMENT_WINDOW:-PT15M}
+
+  payments:
+    <<: *java
+    build: { <<: *build, args: { MODULE: services/payments } }
+    depends_on: *service-deps
+    environment:
+      <<: *service-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/payments
+
+  shipping:
+    <<: *java
+    build: { <<: *build, args: { MODULE: services/shipping } }
+    depends_on: *service-deps
+    environment:
+      <<: *service-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/shipping
+
+  notifications:
+    <<: *java
+    build: { <<: *build, args: { MODULE: services/notifications } }
+    depends_on:
+      <<: *service-deps
+      mailpit: { condition: service_started }
+    environment:
+      <<: *service-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/notifications
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      MAIL_FAILURE_RATE: ${MAIL_FAILURE_RATE:-0}
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      gateway: { condition: service_healthy }
+    ports: ["8090:80"]
+
+  # --- Observability ---------------------------------------------------------
+
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    restart: unless-stopped
+    depends_on:
+      kafka: { condition: service_healthy }
+    environment:
+      KAFKA_CLUSTERS_0_NAME: surtido
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports: ["8092:8080"]
+
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    restart: unless-stopped
+    ports: ["16687:16686"]
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    restart: unless-stopped
+    ports: ["9091:9090"]
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+
+  grafana:
+    image: grafana/grafana:13.2.5
+    restart: unless-stopped
+    depends_on: [prometheus]
+    ports: ["3001:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-surtido}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/surtido.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  # --- Load testing (docker compose --profile loadtest run --rm k6) -----------
+
+  k6:
+    image: grafana/k6:1.8.2
+    profiles: [loadtest]
+    depends_on: [gateway]
+    environment:
+      BASE_URL: http://gateway:8080
+    volumes:
+      - ./loadtest:/scripts
+    command: ["run", "--summary-export", "/scripts/results/summary.json", "/scripts/flash-sale.js"]
+
+volumes:
+  postgres-data:
+  kafka-data:
